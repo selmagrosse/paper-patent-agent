@@ -25,5 +25,11 @@ def main(pdf_path: Path = DEFAULT_PDF) -> None:
 
 
 if __name__ == "__main__":
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PDF
-    main(path)
+    if len(sys.argv) > 1 and sys.argv[1] == "agent":
+        from agent import PaperPatentAgent
+        agent = PaperPatentAgent()
+        response = agent.run("Find me the paper that introduced transformer architecture")
+        print(response)
+    else:
+        path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PDF
+        main(path)
