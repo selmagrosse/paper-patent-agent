@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -20,6 +21,18 @@ load_dotenv()
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 MODEL = "gpt-4o-mini"
+
+def _extract_jurisdiction(patent_id: str) -> str:
+    clean = patent_id.removeprefix("patent/").split("/")[0]
+    match = re.match(r"^([A-Z]{2})", clean)
+    return match.group(1) if match else ""
+
+
+def _resolve_pdf_url(raw_pdf: str, patent_id: str) -> str:
+    if raw_pdf:
+        return raw_pdf
+    clean_id = patent_id.removeprefix("patent/").removesuffix("/en")
+    return f"https://patents.google.com/patent/{clean_id}"
 
 INTENT_PROMPT = """\
 You are an intent classifier for a research assistant that searches papers and patents.
@@ -58,6 +71,21 @@ class PaperPatentAgent(BaseAgent):
         self.register_tool("search_patents_google", self.search_patents_google)
         self.register_tool("download_and_load", self.download_and_load)
         self.register_tool("search_loaded_documents", self.search_loaded_documents)
+
+        # Auto-load existing documents from data folders
+        self._load_existing_documents()
+
+    def _load_existing_documents(self) -> None:
+        """Load all existing PDFs from data/papers/ and data/patents/ into library."""
+        for folder in [DATA_DIR / "papers", DATA_DIR / "patents"]:
+            if folder.exists():
+                for pdf_path in folder.glob("*.pdf"):
+                    try:
+                        doc = load_document(str(pdf_path))
+                        self.library.append(doc)
+                        print(f"Loaded: {doc['filename']}")
+                    except Exception as e:
+                        print(f"Failed to load {pdf_path.name}: {e}")
 
     # ------------------------------------------------------------------
     # Tools
@@ -192,8 +220,6 @@ class PaperPatentAgent(BaseAgent):
             ``inventor``, ``filing_date``, ``abstract``, ``pdf_url``,
             ``jurisdiction``. Returns an ``error`` key on failure.
         """
-        import re
-
         params: dict = {
             "engine": "google_patents",
             "q": query,
@@ -219,10 +245,6 @@ class PaperPatentAgent(BaseAgent):
         if not organic:
             return {"error": "No Google Patents results found."}
 
-        def _extract_jurisdiction(patent_id: str) -> str:
-            match = re.match(r"^([A-Z]{2})", patent_id)
-            return match.group(1) if match else ""
-
         candidates = [
             {
                 "title": r.get("title", ""),
@@ -231,13 +253,14 @@ class PaperPatentAgent(BaseAgent):
                 "inventor": r.get("inventor", ""),
                 "filing_date": r.get("filing_date", ""),
                 "abstract": r.get("snippet", ""),
-                "pdf_url": r.get("pdf", ""),
+                "pdf_url": _resolve_pdf_url(r.get("pdf", ""), r.get("patent_id", "")),
                 "jurisdiction": _extract_jurisdiction(r.get("patent_id", "")),
             }
             for r in organic[:5]
         ]
 
         best = self.llm_pick_best(candidates, query)
+        top = candidates[best]
         return candidates[best]
 
     def download_and_load(self, url: str, source: str = "paper") -> dict:
@@ -264,6 +287,10 @@ class PaperPatentAgent(BaseAgent):
 
         response = requests.get(url, timeout=30)
         response.raise_for_status()
+
+        if not response.content.startswith(b"%PDF"):
+            return {"error": "URL did not return a valid PDF"}
+
         dest.write_bytes(response.content)
 
         document = load_document(str(dest))

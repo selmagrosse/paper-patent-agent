@@ -28,7 +28,17 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "agent":
         from agent import PaperPatentAgent
         agent = PaperPatentAgent()
-        response = agent.run("Find me the paper that introduced transformer architecture")
+        # response = agent.run("Find me the paper that introduced transformer architecture")
+        # print(response)
+        # response = agent.run("Find me a paper by Vaswani about attention mechanisms")
+        # print(response)
+        # response = agent.run("Find me a paper about SOTIF from 2025")
+        # print(response)
+        # response = agent.run("Find me a patent about LiDAR sensor fusion for autonomous driving")
+        # print(response)
+        response = agent.run("Find me a US patent about LiDAR sensor fusion for autonomous driving")
+        print(response)
+        response = agent.run("Search my library for optimization techniques in autonomous driving")
         print(response)
     else:
         path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PDF
