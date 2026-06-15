@@ -34,7 +34,7 @@ Given the user request below, return ONLY a valid JSON object with exactly this 
 }}
 
 Optional params for search_arxiv: author, year, category, title
-Optional params for search_patents_google: assignee, inventor, after_year, before_year, patent_type
+Optional params for search_patents_google: assignee, inventor, after_year, before_year, patent_type, jurisdiction (two-letter country code, e.g. 'US', 'EP', 'JP', 'CN')
 Optional params for search_loaded_documents: (none beyond query)
 
 User request: {user_request}"""
@@ -134,12 +134,12 @@ class PaperPatentAgent(BaseAgent):
         """
         if title:
             search_query = f'ti:"{title}"'
+        elif author:
+            search_query = f'au:"{author}" AND {query}'
         else:
             parts = [query]
-            if author:
-                parts.append(f'au:"{author}"')
             if year:
-                parts.append(year)
+                parts.append(str(year))
             if category:
                 parts.append(f"cat:{category}")
             search_query = " AND ".join(parts)
@@ -173,6 +173,7 @@ class PaperPatentAgent(BaseAgent):
         after_year: str | None = None,
         before_year: str | None = None,
         patent_type: str | None = None,
+        jurisdiction: str | None = None,
     ) -> dict:
         """Search Google Patents via SerpAPI.
 
@@ -183,12 +184,16 @@ class PaperPatentAgent(BaseAgent):
             after_year: Return patents filed after this year (inclusive).
             before_year: Return patents filed before this year (inclusive).
             patent_type: ``"patent"`` or ``"application"``.
+            jurisdiction: Two-letter country code to filter by (e.g. ``"US"``,
+                ``"EP"``, ``"JP"``, ``"CN"``).
 
         Returns:
             Dict with keys: ``title``, ``patent_id``, ``assignee``,
-            ``inventor``, ``filing_date``, ``abstract``, ``pdf_url``.
-            Returns an ``error`` key on failure.
+            ``inventor``, ``filing_date``, ``abstract``, ``pdf_url``,
+            ``jurisdiction``. Returns an ``error`` key on failure.
         """
+        import re
+
         params: dict = {
             "engine": "google_patents",
             "q": query,
@@ -204,6 +209,8 @@ class PaperPatentAgent(BaseAgent):
             params["before"] = f"filing:{before_year}1231"
         if patent_type:
             params["type"] = patent_type
+        if jurisdiction:
+            params["country"] = jurisdiction
 
         search = GoogleSearch(params)
         data = search.get_dict()
@@ -211,6 +218,10 @@ class PaperPatentAgent(BaseAgent):
         organic = data.get("organic_results", [])
         if not organic:
             return {"error": "No Google Patents results found."}
+
+        def _extract_jurisdiction(patent_id: str) -> str:
+            match = re.match(r"^([A-Z]{2})", patent_id)
+            return match.group(1) if match else ""
 
         candidates = [
             {
@@ -221,6 +232,7 @@ class PaperPatentAgent(BaseAgent):
                 "filing_date": r.get("filing_date", ""),
                 "abstract": r.get("snippet", ""),
                 "pdf_url": r.get("pdf", ""),
+                "jurisdiction": _extract_jurisdiction(r.get("patent_id", "")),
             }
             for r in organic[:5]
         ]
