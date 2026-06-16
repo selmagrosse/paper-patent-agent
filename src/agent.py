@@ -16,6 +16,7 @@ from serpapi import GoogleSearch
 
 from base_agent import BaseAgent
 from loader import load_document
+from validator_agent import ValidatorAgent
 
 load_dotenv()
 
@@ -60,12 +61,15 @@ class PaperPatentAgent(BaseAgent):
     Attributes:
         library: List of document dicts returned by :func:`load_document`.
             Documents are appended each time :meth:`download_and_load` is called.
+        validator: A :class:`ValidatorAgent` instance used to double-check
+            whether search candidates genuinely satisfy a user request.
     """
 
     def __init__(self) -> None:
         super().__init__(model_name=MODEL)
         self.library: list[dict] = []
         self._client = OpenAI()
+        self.validator = ValidatorAgent()
 
         self.register_tool("search_arxiv", self.search_arxiv)
         self.register_tool("search_patents_google", self.search_patents_google)
@@ -330,12 +334,16 @@ class PaperPatentAgent(BaseAgent):
     # Confirmation
     # ------------------------------------------------------------------
 
-    def ask_confirmation(self, result: dict) -> bool:
+    def ask_confirmation(self, result: dict, verdict: dict = None) -> bool:
         """Format *result* and prompt the user to confirm adding it to the library.
 
         Args:
             result: A search result dict from :meth:`search_arxiv` or
                 :meth:`search_patents_google`.
+            verdict: Optional validator judgment dict from
+                :meth:`ValidatorAgent.validate`, with ``confidence`` and
+                ``reasoning`` keys. If provided, surfaced as an extra line
+                before the confirmation prompt.
 
         Returns:
             ``True`` if the user confirms, ``False`` otherwise.
@@ -345,6 +353,10 @@ class PaperPatentAgent(BaseAgent):
             if key == "abstract":
                 value = value[:300] + "..." if len(value) > 300 else value
             lines.append(f"{key.capitalize()}: {value}")
+        if verdict is not None:
+            lines.append(
+                f"Validator confidence: {verdict.get('confidence')} — {verdict.get('reasoning')}"
+            )
         lines.append("---------------------")
         print("\n".join(lines))
 
@@ -362,7 +374,7 @@ class PaperPatentAgent(BaseAgent):
         1. Add the request to memory.
         2. Classify intent and extract filters via LLM.
         3. Execute the appropriate tool.
-        4. Ask confirmation, then download if confirmed.
+        4. Validate the result, then ask confirmation, then download if confirmed.
         5. Add the final response to memory.
 
         Args:
@@ -384,7 +396,8 @@ class PaperPatentAgent(BaseAgent):
             self.add_to_memory("agent", response)
             return response
 
-        confirmed = self.ask_confirmation(result)
+        verdict = self.validator.validate(user_request, result)
+        confirmed = self.ask_confirmation(result, verdict)
         if confirmed:
             source = "paper" if tool == "search_arxiv" else "patent"
             pdf_url = result.get("pdf_url", "")

@@ -28,8 +28,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "agent":
         from agent import PaperPatentAgent
         agent = PaperPatentAgent()
-        # response = agent.run("Find me the paper that introduced transformer architecture")
-        # print(response)
+        response = agent.run("Find me the paper that introduced transformer architecture")
+        print(response)
         # response = agent.run("Find me a paper by Vaswani about attention mechanisms")
         # print(response)
         # response = agent.run("Find me a paper about SOTIF from 2025")
