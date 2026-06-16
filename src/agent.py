@@ -34,12 +34,13 @@ def _resolve_pdf_url(raw_pdf: str, patent_id: str) -> str:
     clean_id = patent_id.removeprefix("patent/").removesuffix("/en")
     return f"https://patents.google.com/patent/{clean_id}"
 
+
 INTENT_PROMPT = """\
 You are an intent classifier for a research assistant that searches papers and patents.
 
 Given the user request below, return ONLY a valid JSON object with exactly this structure:
 {{
-    "tool": "<one of: search_arxiv, search_patents_google, search_loaded_documents>",
+    "tool": "<one of: search_arxiv, search_patents_google>",
     "params": {{
         "query": "<core search query>",
         ... any optional filters that apply ...
@@ -48,7 +49,6 @@ Given the user request below, return ONLY a valid JSON object with exactly this 
 
 Optional params for search_arxiv: author, year, category, title
 Optional params for search_patents_google: assignee, inventor, after_year, before_year, patent_type, jurisdiction (two-letter country code, e.g. 'US', 'EP', 'JP', 'CN')
-Optional params for search_loaded_documents: (none beyond query)
 
 User request: {user_request}"""
 
@@ -70,7 +70,6 @@ class PaperPatentAgent(BaseAgent):
         self.register_tool("search_arxiv", self.search_arxiv)
         self.register_tool("search_patents_google", self.search_patents_google)
         self.register_tool("download_and_load", self.download_and_load)
-        self.register_tool("search_loaded_documents", self.search_loaded_documents)
 
         # Auto-load existing documents from data folders
         self._load_existing_documents()
@@ -297,46 +296,6 @@ class PaperPatentAgent(BaseAgent):
         self.library.append(document)
         return document
 
-    def search_loaded_documents(self, query: str) -> list[dict]:
-        """Keyword search over all documents in :attr:`library`.
-
-        Splits *query* into individual keywords, scans every page of every
-        document, counts matches, and returns the top 3 pages by match count.
-
-        Args:
-            query: Space-separated keywords to search for.
-
-        Returns:
-            List of up to 3 dicts, each with keys: ``filename``, ``page``,
-            ``match_count``, ``excerpt`` (200 characters around the first match).
-        """
-        keywords = [kw.lower() for kw in query.split() if kw]
-        hits: list[dict] = []
-
-        for doc in self.library:
-            for page_num, page_text in enumerate(doc["pages"], start=1):
-                lower_page = page_text.lower()
-                count = sum(lower_page.count(kw) for kw in keywords)
-                if count == 0:
-                    continue
-
-                first_pos = min(
-                    (lower_page.find(kw) for kw in keywords if lower_page.find(kw) != -1),
-                    default=0,
-                )
-                start = max(0, first_pos - 50)
-                excerpt = page_text[start: start + 200]
-
-                hits.append({
-                    "filename": doc["filename"],
-                    "page": page_num,
-                    "match_count": count,
-                    "excerpt": excerpt,
-                })
-
-        hits.sort(key=lambda h: h["match_count"], reverse=True)
-        return hits[:3]
-
     # ------------------------------------------------------------------
     # Intent classification
     # ------------------------------------------------------------------
@@ -403,9 +362,8 @@ class PaperPatentAgent(BaseAgent):
         1. Add the request to memory.
         2. Classify intent and extract filters via LLM.
         3. Execute the appropriate tool.
-        4. For search results: ask confirmation, then download if confirmed.
-        5. For library search: format and return top 3 matching pages.
-        6. Add the final response to memory.
+        4. Ask confirmation, then download if confirmed.
+        5. Add the final response to memory.
 
         Args:
             user_request: Natural-language request from the user.
@@ -421,42 +379,25 @@ class PaperPatentAgent(BaseAgent):
 
         result = self.execute_tool(tool, **params)
 
-        # search_loaded_documents returns a list — check tool type before
-        # looking for an error key
-        if tool == "search_loaded_documents":
-            hits = result if isinstance(result, list) else []
-            if not hits:
-                response = "No matching pages found in your library."
-            else:
-                parts = [f"Top {len(hits)} result(s) for '{params.get('query', '')}':\n"]
-                for i, hit in enumerate(hits, start=1):
-                    parts.append(
-                        f"{i}. [{hit['filename']} — page {hit['page']}] "
-                        f"({hit['match_count']} match(es))\n"
-                        f"   ...{hit['excerpt']}..."
-                    )
-                response = "\n".join(parts)
+        if isinstance(result, dict) and "error" in result:
+            response = f"Search failed: {result['error']}"
+            self.add_to_memory("agent", response)
+            return response
 
+        confirmed = self.ask_confirmation(result)
+        if confirmed:
+            source = "paper" if tool == "search_arxiv" else "patent"
+            pdf_url = result.get("pdf_url", "")
+            if not pdf_url:
+                response = "No PDF URL available for download."
+            else:
+                self.execute_tool("download_and_load", url=pdf_url, source=source)
+                response = (
+                    f"Added '{result.get('title', pdf_url)}' to your library. "
+                    f"Library now contains {len(self.library)} document(s)."
+                )
         else:
-            if isinstance(result, dict) and "error" in result:
-                response = f"Search failed: {result['error']}"
-                self.add_to_memory("agent", response)
-                return response
-
-            confirmed = self.ask_confirmation(result)
-            if confirmed:
-                source = "paper" if tool == "search_arxiv" else "patent"
-                pdf_url = result.get("pdf_url", "")
-                if not pdf_url:
-                    response = "No PDF URL available for download."
-                else:
-                    self.execute_tool("download_and_load", url=pdf_url, source=source)
-                    response = (
-                        f"Added '{result.get('title', pdf_url)}' to your library. "
-                        f"Library now contains {len(self.library)} document(s)."
-                    )
-            else:
-                response = "Cancelled — document not added to library."
+            response = "Cancelled — document not added to library."
 
         self.add_to_memory("agent", response)
         return response

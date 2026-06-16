@@ -36,10 +36,8 @@ if __name__ == "__main__":
         # print(response)
         # response = agent.run("Find me a patent about LiDAR sensor fusion for autonomous driving")
         # print(response)
-        response = agent.run("Find me a US patent about LiDAR sensor fusion for autonomous driving")
-        print(response)
-        response = agent.run("Search my library for optimization techniques in autonomous driving")
-        print(response)
+        # response = agent.run("Find me a US patent about LiDAR sensor fusion for autonomous driving")
+        # print(response)
     else:
         path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PDF
         main(path)
