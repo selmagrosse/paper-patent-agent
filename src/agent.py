@@ -15,13 +15,13 @@ from openai import OpenAI
 from serpapi import GoogleSearch
 
 from base_agent import BaseAgent
+from config import MODEL
 from loader import load_document
 from validator_agent import ValidatorAgent
 
 load_dotenv()
 
 DATA_DIR = Path(__file__).parent.parent / "data"
-MODEL = "gpt-4o-mini"
 
 def _extract_jurisdiction(patent_id: str) -> str:
     clean = patent_id.removeprefix("patent/").split("/")[0]
@@ -121,19 +121,18 @@ class PaperPatentAgent(BaseAgent):
             "{\"best_index\": <integer 0 to "
             f"{len(candidates) - 1}>}}"
         )
-        response = self._client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-        raw = response.choices[0].message.content.strip()
-
         try:
+            response = self._client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
             index = int(parsed["best_index"])
             if 0 <= index < len(candidates):
                 return index
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except Exception:
             pass
 
         return 0
@@ -263,7 +262,6 @@ class PaperPatentAgent(BaseAgent):
         ]
 
         best = self.llm_pick_best(candidates, query)
-        top = candidates[best]
         return candidates[best]
 
     def download_and_load(self, url: str, source: str = "paper") -> dict:
@@ -309,7 +307,7 @@ class PaperPatentAgent(BaseAgent):
 
         Makes a single LLM call instructing the model to return a JSON object
         with ``tool`` and ``params`` fields. Falls back to a default
-        ``search_arxiv`` intent if parsing fails.
+        ``search_arxiv`` intent if the call fails or parsing fails.
 
         Args:
             user_request: Raw natural-language request from the user.
@@ -318,16 +316,15 @@ class PaperPatentAgent(BaseAgent):
             Dict with keys ``tool`` (str) and ``params`` (dict).
         """
         prompt = INTENT_PROMPT.format(user_request=user_request)
-        response = self._client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-        raw = response.choices[0].message.content.strip()
-
         try:
+            response = self._client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content.strip()
             return json.loads(raw)
-        except json.JSONDecodeError:
+        except Exception:
             return {"tool": "search_arxiv", "params": {"query": user_request}}
 
     # ------------------------------------------------------------------

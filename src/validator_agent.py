@@ -6,10 +6,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from base_agent import BaseAgent
+from config import MODEL
 
 load_dotenv()
-
-MODEL = "gpt-4o-mini"
 
 VALIDATE_PROMPT = """\
 A user made the following request: "{user_request}"
@@ -53,28 +52,29 @@ class ValidatorAgent(BaseAgent):
 
         Returns:
             Dict with keys ``valid`` (bool), ``confidence`` (float 0-1), and
-            ``reasoning`` (str). On parse failure, returns a permissive default:
-            ``{"valid": True, "confidence": 0.5, "reasoning": "validation parsing failed"}``.
+            ``reasoning`` (str). On an API error or unparseable response,
+            fails closed: ``{"valid": False, "confidence": 0.0, "reasoning": "validation failed"}``
+            — a candidate that can't be validated is treated as unvalidated,
+            not as approved.
         """
         prompt = VALIDATE_PROMPT.format(
             user_request=user_request,
             title=candidate.get("title", ""),
             abstract=candidate.get("abstract", "")[:300],
         )
-        response = self._client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-        raw = response.choices[0].message.content.strip()
-
         try:
+            response = self._client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content.strip()
             return json.loads(raw)
-        except json.JSONDecodeError:
+        except Exception:
             return {
-                "valid": True,
-                "confidence": 0.5,
-                "reasoning": "validation parsing failed",
+                "valid": False,
+                "confidence": 0.0,
+                "reasoning": "validation failed",
             }
 
     def run(self, user_request: str) -> str:

@@ -27,7 +27,7 @@ class BaseAgent:
         """Append a turn to memory, evicting the oldest entry if over the limit.
 
         Args:
-            role: Either ``"user"`` or ``"agent"``.
+            role: Either "user" or "agent".
             content: The message text.
         """
         self.memory.append({"role": role, "content": content})
@@ -35,7 +35,7 @@ class BaseAgent:
             self.memory.pop(0)
 
     def register_tool(self, name: str, fn: callable) -> None:
-        """Register a callable under *name* for dispatch by :meth:`execute_tool`.
+        """Register a callable "fn" under "name".
 
         Args:
             name: Tool identifier string.

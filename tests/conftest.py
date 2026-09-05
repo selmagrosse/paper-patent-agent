@@ -27,8 +27,8 @@ def paper_result() -> dict:
 
 @pytest.fixture(scope="session")
 def patent_result() -> dict:
-    """Load the US12271195B1 patent PDF and return the document dict."""
-    path = DATA_DIR / "patents" / "US12271195B1.pdf"
+    """Load the US10942272 patent PDF and return the document dict."""
+    path = DATA_DIR / "patents" / "US10942272.pdf"
     return load_document(str(path))
 
 
@@ -40,5 +40,5 @@ def paper_summary(paper_result) -> dict:
 
 @pytest.fixture(scope="session")
 def patent_summary(patent_result) -> dict:
-    """Summarize the US12271195B1 patent via the OpenAI API."""
+    """Summarize the US10942272 patent via the OpenAI API."""
     return summarize_document(patent_result)

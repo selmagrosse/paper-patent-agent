@@ -5,9 +5,9 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+from config import MODEL
 
-MODEL = "gpt-4o-mini"
+load_dotenv()
 
 PAPER_PROMPT = """\
 You are a research paper analyst. Extract metadata and generate a structured summary from the following paper.
